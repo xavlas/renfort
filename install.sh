@@ -90,6 +90,27 @@ sed -i "s|PHOTOS_HOST_PATH=.*$|PHOTOS_HOST_PATH=$esc|" docker-compose.yml
 grep -q "\"$PHOTOS:/photos:ro\"" docker-compose.yml || fail "Impossible de régler le dossier dans docker-compose.yml."
 echo "Photos : $PHOTOS (lecture seule)"
 
+# --- Réglages : repris de la version précédente, ou passés en variables -------
+#     (ex. depuis le Mac : PI_FACES=0 bash deployer-phototheque.sh)
+for var in WORKERS PI_FACES SCAN_INTERVAL_HOURS ENABLE_FACES FACE_MATCH_THRESHOLD; do
+  val="${!var}"
+  if [ -z "$val" ] && [ "$KEEP" = 1 ]; then
+    val=$(sed -n "s/^[[:space:]]*-[[:space:]]*$var=\([^[:space:]#]*\).*/\1/p" docker-compose.yml.precedent | head -1)
+  fi
+  if [ -n "$val" ]; then
+    printf '%s' "$val" | grep -qE '^[0-9.]+$' || fail "Valeur invalide pour $var : $val"
+    sed -i "s/^\([[:space:]]*-[[:space:]]*$var=\).*/\1$val/" docker-compose.yml
+  fi
+done
+if [ "$KEEP" = 1 ]; then
+  oldport=$(sed -n 's/^[[:space:]]*-[[:space:]]*"\{0,1\}\([0-9]*\):2342"\{0,1\}.*/\1/p' docker-compose.yml.precedent | head -1)
+  if [ -n "$oldport" ] && [ "$oldport" != "2342" ]; then
+    sed -i "s/^\([[:space:]]*-[[:space:]]*\)\"2342:2342\"/\1\"$oldport:2342\"/" docker-compose.yml
+    PORT="$oldport"
+  fi
+fi
+echo "Réglages : $(grep -oE '(WORKERS|PI_FACES|SCAN_INTERVAL_HOURS|ENABLE_FACES|FACE_MATCH_THRESHOLD)=[0-9.]+' docker-compose.yml | tr '\n' ' ')port $PORT"
+
 # --- Mot de passe (première installation seulement) --------------------------
 if [ ! -f .env ]; then
   say "Mot de passe d'accès à la photothèque"

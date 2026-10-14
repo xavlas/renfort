@@ -942,6 +942,10 @@ const Status = {
         t.textContent = plural(s.photos, "photo", "photos");
         bar.hidden = true;
       }
+      if (s.faces_pending && !(s.workers || []).length) {
+        t.textContent += ` · ${s.faces_pending.toLocaleString("fr-FR")} en attente de visages`;
+        t.title = s.pi_faces ? "" : "Les visages sont analysés par les renforts : lancez-en un pour les traiter.";
+      }
       $("#statusBtn").title = s.last_scan
         ? `Dernière analyse : ${new Date(s.last_scan * 1000).toLocaleString("fr-FR")}. Cliquer pour relancer.`
         : "Lancer une analyse";

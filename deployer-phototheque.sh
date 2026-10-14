@@ -36,5 +36,11 @@ scp -q "${SSH_OPTS[@]}" "$ARCHIVE" "$PI:phototheque.tar.gz"
 
 ARG=""
 [ -n "$1" ] && ARG=$(printf '%q' "$1")
+# réglages éventuels à transmettre (ex. PI_FACES=0 bash deployer-phototheque.sh)
+SETTINGS=""
+for var in WORKERS PI_FACES SCAN_INTERVAL_HOURS ENABLE_FACES FACE_MATCH_THRESHOLD; do
+  eval "val=\${$var:-}"
+  [ -n "$val" ] && SETTINGS="$SETTINGS $var=$(printf '%q' "$val")"
+done
 ssh -t "${SSH_OPTS[@]}" "$PI" \
-  "mkdir -p ~/phototheque && tar -xzf ~/phototheque.tar.gz -C ~/phototheque ./install.sh && bash ~/phototheque/install.sh $ARG"
+  "mkdir -p ~/phototheque && tar -xzf ~/phototheque.tar.gz -C ~/phototheque ./install.sh &&$SETTINGS bash ~/phototheque/install.sh $ARG"

@@ -40,6 +40,8 @@ PREVIEW_SIZE = _int("PREVIEW_SIZE", 2048)
 
 # Visages
 ENABLE_FACES = os.environ.get("ENABLE_FACES", "1") not in ("0", "false", "no")
+# 0 = le Pi ne cherche pas les visages lui-même : il fait les miniatures, les renforts font les visages
+PI_FACES = os.environ.get("PI_FACES", "1") not in ("0", "false", "no")
 FACE_DETECT_SIZE = _int("FACE_DETECT_SIZE", 1280)   # côté max de l'image analysée
 FACE_MIN_SCORE = _float("FACE_MIN_SCORE", 0.85)     # confiance minimale de détection
 FACE_MIN_PX = _int("FACE_MIN_PX", 32)               # taille minimale d'un visage (px, à FACE_DETECT_SIZE)

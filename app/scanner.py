@@ -88,6 +88,11 @@ class Scanner:
         self.queue = collections.deque()   # photos à traiter (partagée avec les renforts)
         self.leases = {}                   # photo -> (chemin, échéance, renfort)
         self.remote_results = queue.Queue()
+        self.faces_queue = collections.deque()  # photos dont seuls les visages restent à faire (renforts)
+        self._faces_found = []             # rempli par l'indexation
+        self._faces_wanted = False         # un renfort attend : lancer une passe « visages »
+        self._faces_asked = 0.0
+        self._scan_due = True
         self.workers = {}                  # renforts vus récemment
         self.processing = False
         self._lock = threading.Lock()
@@ -101,20 +106,26 @@ class Scanner:
         for s in db.conn().execute("SELECT id FROM sources WHERE state='removing'"):
             self.remove_source(s["id"])
 
-    def request(self):
-        self.trigger.set()
-
     def add_source(self, sid: int):
         """Nouvelle source : traitée tout de suite, même si une longue analyse est en cours."""
         with self._lock:
             self._added.append(sid)
         self.trigger.set()
 
+    def request(self):
+        self._scan_due = True
+        self.trigger.set()
+
     def _loop(self):
         time.sleep(2)
         while True:
             try:
-                self.scan()
+                if self._scan_due or self._added:
+                    self._scan_due = False
+                    self.scan()
+                elif self._faces_wanted:
+                    self._faces_wanted = False
+                    self.faces_pass()
             except Exception as e:
                 log.exception("Échec de l'analyse")
                 self.last_error = f"{type(e).__name__}: {e}"
@@ -125,10 +136,12 @@ class Scanner:
                 except Exception:
                     pass
             interval = config.SCAN_INTERVAL_HOURS * 3600 if config.SCAN_INTERVAL_HOURS > 0 else None
-            if self._added:
+            if self._added or self._faces_wanted:
                 continue
-            self.trigger.wait(timeout=interval)
+            signaled = self.trigger.wait(timeout=interval)
             self.trigger.clear()
+            if not signaled:
+                self._scan_due = True
 
     # -- analyse -------------------------------------------------------------
     def scan(self):
@@ -141,6 +154,7 @@ class Scanner:
             self._added.clear()   # une analyse complète couvre aussi les sources ajoutées
         self.status.update(state="indexing", total=0, done=0, errors=0, message="Recherche des photos…")
         self.last_error = None
+        self._faces_found = []
         todo = []
         for src in sorted(db.sources(), key=lambda s: -s["added_ts"]):  # dossiers ajoutés récemment d'abord
             todo += self._safe_index(c, src, with_faces)
@@ -206,8 +220,13 @@ class Scanner:
                 c.execute("UPDATE photos SET size=?, mtime=?, fp=NULL, tw=NULL, faces_done=0, error=NULL WHERE id=?",
                           (size, mtime, r["id"]))
                 todo.append((r["id"], prefix + p))
-            elif not r["error"] and (r["tw"] is None or (with_faces and not r["faces_done"])):
+            elif not r["error"] and r["tw"] is None:
                 todo.append((r["id"], prefix + p))
+            elif not r["error"] and with_faces and not r["faces_done"]:
+                if config.PI_FACES:
+                    todo.append((r["id"], prefix + p))
+                else:  # miniature faite, visages laissés aux renforts
+                    self._faces_found.append((r["id"], prefix + p))
 
         # nouveaux fichiers (ou déplacés : même empreinte qu'un fichier disparu)
         missing_by_fp = {r["fp"]: r for r in missing.values() if r["fp"]}
@@ -323,11 +342,16 @@ class Scanner:
         out = []
         with self._lock:
             if not self.processing:
+                if not config.PI_FACES and now - self._faces_asked > 30:
+                    self._faces_asked = now      # visages en attente ? le fil d'analyse va vérifier
+                    self._faces_wanted = True
+                    self.trigger.set()
                 return out
-            while self.queue and len(out) < n:
-                pid, path = self.queue.popleft()
-                self.leases[pid] = (path, now + LEASE_SECONDS, worker)
-                out.append((pid, path))
+            for kind, q in (("main", self.queue), ("faces", self.faces_queue)):
+                while q and len(out) < n:
+                    pid, path = q.popleft()
+                    self.leases[pid] = (path, now + LEASE_SECONDS, worker, kind)
+                    out.append((pid, path))
         return out
 
     def lease_path(self, pid: int, worker: str):
@@ -364,23 +388,52 @@ class Scanner:
     def _expire_leases(self):
         now = time.time()
         with self._lock:
-            late = [(pid, v[0]) for pid, v in self.leases.items() if v[1] < now]
-            for pid, path in late:
+            late = [(pid, v[0], v[3]) for pid, v in self.leases.items() if v[1] < now]
+            for pid, path, kind in late:
                 del self.leases[pid]
-                self.queue.appendleft((pid, path))
+                (self.queue if kind == "main" else self.faces_queue).appendleft((pid, path))
         if late:
             log.warning("%d photo(s) non rendues par un renfort : remises dans la file", len(late))
 
     # -- traitement ------------------------------------------------------------
-    def _process(self, c, todo, with_faces):
+    def faces_pass(self):
+        """Passe « visages seulement » : photos déjà en miniature dont les visages attendent un renfort."""
+        c = db.conn()
+        with_faces = faces.available()
+        if not with_faces:
+            return
+        if not faces.index.loaded:
+            faces.index.load()
+        rows = c.execute("SELECT p.id, p.path FROM photos p JOIN sources s ON s.id=p.source_id AND s.state='active'"
+                         " WHERE p.tw IS NOT NULL AND p.faces_done=0 AND p.error IS NULL"
+                         " ORDER BY p.taken_ts DESC").fetchall()
+        if not rows:
+            return
+        log.info("%d photo(s) en attente de visages : confiées aux renforts", len(rows))
+        self.running = True
+        self.status.update(state="processing", total=0, done=0, errors=0, message="Visages (renforts)")
+        try:
+            self._process(c, [], with_faces, [(r["id"], fs_path(r["path"])) for r in rows])
+        finally:
+            total = c.execute("SELECT COUNT(*) FROM photos WHERE tw IS NOT NULL").fetchone()[0]
+            self.status.update(state="idle", total=0, done=0, message=f"{total} photos")
+            self.running = False
+
+    def _helpers_active(self):
+        return bool(self.active_workers())
+
+    def _process(self, c, todo, with_faces, faces_todo=()):
+        local_faces = with_faces and config.PI_FACES
         added = self._take_added(c, with_faces)   # hors du verrou : _take_added le prend lui-même
         with self._lock:
             self.queue = collections.deque(added + todo)
-            if not self.queue:
+            self.faces_queue = collections.deque(list(faces_todo) + self._faces_found)
+            self._faces_found = []
+            if not self.queue and not self.faces_queue:
                 return
             self.leases.clear()
             self.processing = True
-        self.status.update(state="processing", total=len(self.queue), done=0, message="")
+        self.status.update(state="processing", total=len(self.queue) + len(self.faces_queue), done=0)
         dirty = set()
         pending = 0
         last_flush = time.monotonic()
@@ -395,13 +448,16 @@ class Scanner:
                             if not self.queue:
                                 return
                             job = self.queue.popleft()
-                        inflight[ex.submit(process_one, job[0], job[1], with_faces)] = job
+                        inflight[ex.submit(process_one, job[0], job[1], local_faces)] = job
 
-                def record(pid, path, res=None, err=None):
+                def record(pid, path, res=None, err=None, local=False):
                     try:
                         if err is not None:
                             raise RuntimeError(err)
-                        self._store(c, pid, res, with_faces, dirty)
+                        self._store(c, pid, res, local_faces if local else with_faces, dirty)
+                        if local and with_faces and not local_faces:
+                            with self._lock:   # visages : pour les renforts
+                                self.faces_queue.append((pid, path))
                     except Exception as e:
                         log.warning("%s : %s", path, e)
                         self.status["errors"] += 1
@@ -422,7 +478,7 @@ class Scanner:
                     for fut in done:
                         pid, path = inflight.pop(fut)
                         try:
-                            record(pid, path, fut.result())
+                            record(pid, path, fut.result(), local=True)
                         except Exception as e:
                             record(pid, path, err=f"{type(e).__name__}: {e}")
                         pending += 1
@@ -438,19 +494,24 @@ class Scanner:
                         extra = self._take_added(c, with_faces)
                         with self._lock:
                             self.queue.extendleft(reversed(extra))
+                            self.faces_queue.extend(self._faces_found)
+                            self._faces_found = []
                         self.status["total"] += len(extra)
                     if pending >= 25 or (pending and time.monotonic() - last_flush > 5):
                         self._flush(c, dirty)
                         pending = 0
                         last_flush = time.monotonic()
                     with self._lock:
-                        finished = not inflight and not self.queue and not self.leases
+                        # visages en attente sans renfort connecté : ils restent en base pour plus tard
+                        faces_left = bool(self.faces_queue) and self._helpers_active()
+                        finished = not inflight and not self.queue and not self.leases and not faces_left
                     if finished and self.remote_results.empty():
                         break
         finally:
             with self._lock:
                 self.processing = False
                 self.queue.clear()
+                self.faces_queue.clear()
                 self.leases.clear()
             self._flush(c, dirty)
 

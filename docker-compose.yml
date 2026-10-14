@@ -39,5 +39,8 @@ services:
       - SCAN_INTERVAL_HOURS=6
       # Reconnaissance des visages : 1 = activée, 0 = désactivée.
       - ENABLE_FACES=1
+      # Le Pi cherche-t-il les visages lui-même ? 0 = non : il fait seulement les miniatures,
+      # et les visages sont analysés par les renforts (ex. un Mac) dès qu'ils se connectent.
+      - PI_FACES=1
       # Exigence pour regrouper deux visages (0.35 = plus de regroupements, 0.45 = plus strict).
       - FACE_MATCH_THRESHOLD=0.40

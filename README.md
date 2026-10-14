@@ -127,6 +127,7 @@ bash renfort/lancer-renfort.sh            # depuis le dossier du dépôt
 - Il fonctionne sur Mac et Linux. Il faut Python 3.10 ou plus récent. La première fois, le script installe ce qu'il faut dans `~/.phototheque-renfort`.
 - Options : `--fils 6` pour le nombre de photos en parallèle, `--serveur http://10.0.0.228:2342` pour l'adresse du Pi.
 - **Encore plus rapide** : si le NAS est aussi monté sur le Mac (Finder > Aller > Se connecter au serveur), le renfort le trouve tout seul dans `/Volumes` et y lit les photos directement, sans passer par le Pi. Sinon, indiquez le dossier avec `--nas /Volumes/NomDuPartage`.
+- **Visages seulement sur les renforts** : avec `PI_FACES=0`, le Pi ne cherche plus les visages. Il lit les photos et fait les miniatures (la galerie se remplit vite), puis les visages attendent un renfort, qui les traite dès qu'il se connecte. Le compteur indique combien de photos attendent. Pour l'activer depuis le Mac : `PI_FACES=0 bash deployer-phototheque.sh`.
 - `WORKERS=0` dans `docker-compose.yml` laisse tout le travail aux renforts, et le Pi se contente de relayer et d'enregistrer.
 - Ctrl+C l'arrête à tout moment. Les photos qu'il n'a pas finies sont reprises par le Pi au bout de 5 minutes.
 - Le Mac ne se met pas en veille tant que le renfort tourne. Le compteur en haut de la photothèque affiche le renfort et son débit.
@@ -138,12 +139,13 @@ bash renfort/lancer-renfort.sh            # depuis le dossier du dépôt
 | `APP_PASSWORD` | vide | Mot de passe d'accès (via `.env`) |
 | `WORKERS` | 2 | Photos analysées en parallèle. 2 sur un Pi 4, 3 sur un Pi 5 |
 | `SCAN_INTERVAL_HOURS` | 6 | Fréquence des analyses automatiques (0 = au démarrage et à la demande uniquement) |
+| `PI_FACES` | 1 | 0 : le Pi ne cherche pas les visages, seuls les renforts le font |
 | `ENABLE_FACES` | 1 | 0 pour désactiver la reconnaissance des visages (analyse bien plus rapide) |
 | `FACE_MATCH_THRESHOLD` | 0.40 | Exigence pour regrouper deux visages. Plus bas (0.35) : moins de groupes mais plus d'erreurs. Plus haut (0.45) : groupes plus sûrs mais plus nombreux |
 | `MIN_CLUSTER_SIZE` | 2 | Nombre minimal de visages pour qu'un groupe apparaisse dans « Qui est-ce ? » |
 | `FACE_MIN_PX` | 32 | Taille minimale d'un visage pour être pris en compte |
 
-Après modification : `docker compose up -d`.
+Après modification : `docker compose up -d`. Ces réglages sont conservés lors des mises à jour, et peuvent aussi être passés au déploiement, par exemple `WORKERS=3 PI_FACES=0 bash deployer-phototheque.sh`.
 
 ---
 

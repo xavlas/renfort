@@ -371,6 +371,20 @@ def cameras():
     return [{"model": r["model"], "n": r["n"]} for r in rows]
 
 
+_fp_cache = [0.0, 0]
+
+
+def _faces_pending():
+    """Photos dont les visages restent à analyser (mis en cache quelques secondes)."""
+    if not faces.available():
+        return 0
+    if time.time() - _fp_cache[0] > 10:
+        _fp_cache[1] = db.conn().execute(
+            "SELECT COUNT(*) FROM photos WHERE tw IS NOT NULL AND faces_done=0 AND error IS NULL").fetchone()[0]
+        _fp_cache[0] = time.time()
+    return _fp_cache[1]
+
+
 @app.get("/api/status")
 def status():
     c = db.conn()
@@ -384,6 +398,8 @@ def status():
         unavailable=[s["label"] for s in db.sources() if s["id"] in scanner.unavailable],
         last_error=scanner.last_error,
         workers=scanner.active_workers(),
+        faces_pending=_faces_pending(),
+        pi_faces=config.PI_FACES,
         remaining=len(scanner.queue) + len(scanner.leases),
         auth=bool(config.APP_PASSWORD),
     )
