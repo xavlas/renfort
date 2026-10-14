@@ -51,7 +51,12 @@ MIN_CLUSTER = max(1, _int("MIN_CLUSTER_SIZE", 2))   # taille mini d'un groupe pr
 # Accès
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".gif"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".gif",
+              # RAW (lus via leur aperçu JPEG intégré)
+              ".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng", ".orf", ".rw2", ".raf",
+              ".pef", ".srw", ".x3f", ".3fr", ".iiq", ".rwl", ".erf", ".kdc", ".mrw"}
+# Un RAW accompagné d'un JPEG du même nom (prise RAW+JPEG) n'est pas affiché en double
+SKIP_RAW_WITH_JPEG = os.environ.get("SKIP_RAW_WITH_JPEG", "1") not in ("0", "false", "no")
 SKIP_DIRS = {"@eadir", "#recycle", ".thumbnails", ".trash", "$recycle.bin", "lost+found"}
 
 for d in (DATA_DIR, THUMBS_DIR, PREVIEWS_DIR, FACES_DIR):

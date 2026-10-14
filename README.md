@@ -9,7 +9,7 @@ Une photothèque web pour Raspberry Pi, dans l'esprit d'iPhoto :
 - **plusieurs dossiers** (NAS, disque USB, clé…) à ajouter ou retirer depuis l'interface ;
 - vos photos restent **où elles sont, en lecture seule** : rien n'est déplacé ni modifié.
 
-Formats lus : JPEG, HEIC/HEIF (iPhone), PNG, WebP, TIFF, BMP, GIF.
+Formats lus : JPEG, HEIC/HEIF (iPhone), PNG, WebP, TIFF, BMP, GIF, et les fichiers **RAW** : CR2, CR3 (Canon), NEF (Nikon), ARW (Sony), DNG, RAF (Fuji), ORF (Olympus), RW2 (Panasonic), PEF (Pentax)… Pour un RAW, la photothèque utilise l'aperçu JPEG que l'appareil a enregistré dans le fichier : c'est rapide, et la couleur est celle que l'appareil affichait. Le bouton de téléchargement renvoie le RAW original. Une prise **RAW+JPEG** (même nom de fichier) n'apparaît qu'une fois, via son JPEG (`SKIP_RAW_WITH_JPEG=0` pour afficher les deux).
 
 ---
 
@@ -155,7 +155,7 @@ Après modification : `docker compose up -d`. Ces réglages sont conservés lors
 - **Stockage** : le dossier `./data` contient la base, les miniatures et les vignettes de visages, soit environ 1 % de la taille de la photothèque. Les aperçus grand format sont créés à la première ouverture d'une photo, puis gardés (comptez environ 300 Ko par photo ouverte). Placez `./data` sur un disque local (SSD si possible), pas sur la carte SD ni sur un partage réseau.
 - **Sauvegarde** : sauvegarder `./data` suffit à conserver tous les noms de personnes.
 - **Tout réanalyser de zéro** : `docker compose down`, supprimez `./data`, puis `docker compose up -d`. Cela efface aussi les noms donnés aux visages.
-- **Vidéos et fichiers RAW** : non pris en charge pour l'instant, ils sont ignorés.
+- **Vidéos** : non prises en charge pour l'instant, elles sont ignorées.
 - **Accès depuis l'extérieur** : l'application est conçue pour le réseau local. Pour y accéder hors de chez vous, passez par un VPN (WireGuard, Tailscale) plutôt que d'ouvrir le port sur votre box.
 
 ## Dépannage

@@ -34,11 +34,19 @@ def fingerprint(path: Path, size: int) -> str:
 def walk(root: Path):
     for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
         dirnames[:] = [d for d in dirnames if not d.startswith(".") and d.lower() not in config.SKIP_DIRS]
+        jpeg_stems = set()
+        if config.SKIP_RAW_WITH_JPEG:
+            jpeg_stems = {os.path.splitext(n)[0].lower() for n in filenames
+                          if os.path.splitext(n)[1].lower() in (".jpg", ".jpeg", ".heic", ".heif")}
         for name in filenames:
             if name.startswith("."):
                 continue
-            if os.path.splitext(name)[1].lower() not in config.IMAGE_EXTS:
+            stem, ext = os.path.splitext(name)
+            ext = ext.lower()
+            if ext not in config.IMAGE_EXTS:
                 continue
+            if ext in imaging.RAW_EXTS and stem.lower() in jpeg_stems:
+                continue  # prise RAW+JPEG : on garde le JPEG
             full = Path(dirpath) / name
             try:
                 st = full.stat()

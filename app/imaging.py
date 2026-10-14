@@ -1,4 +1,5 @@
 """Lecture des images : EXIF, orientation, miniatures, aperçus."""
+import io
 import os
 import re
 import threading
@@ -78,15 +79,122 @@ def _gps_to_deg(values, ref):
         return None
 
 
-def read_metadata(im: Image.Image, name: str, mtime: float):
+RAW_EXTS = {".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".dng", ".orf", ".rw2", ".raf",
+            ".pef", ".srw", ".x3f", ".3fr", ".iiq", ".rwl", ".erf", ".kdc", ".mrw"}
+
+_TRANSPOSE = {2: Image.Transpose.FLIP_LEFT_RIGHT, 3: Image.Transpose.ROTATE_180, 4: Image.Transpose.FLIP_TOP_BOTTOM,
+              5: Image.Transpose.TRANSPOSE, 6: Image.Transpose.ROTATE_270, 7: Image.Transpose.TRANSVERSE,
+              8: Image.Transpose.ROTATE_90}
+
+
+def is_raw(name: str) -> bool:
+    return os.path.splitext(name or "")[1].lower() in RAW_EXTS
+
+
+def _tiff_jpegs(data: bytes):
+    """Aperçus JPEG déclarés dans la structure TIFF d'un RAW (CR2, NEF, ARW, DNG, ORF, PEF…)."""
+    import struct
+    if data[:4] == b"II*\0":
+        e = "<"
+    elif data[:4] == b"MM\0*":
+        e = ">"
+    else:
+        return []
+    found, seen = [], set()
+    todo = [struct.unpack(e + "I", data[4:8])[0]]
+    while todo and len(seen) < 32:
+        off = todo.pop()
+        if off in seen or off <= 0 or off + 2 > len(data):
+            continue
+        seen.add(off)
+        n = struct.unpack(e + "H", data[off:off + 2])[0]
+        if n > 1000:
+            continue
+        tags = {}
+        for i in range(n):
+            ent = off + 2 + 12 * i
+            if ent + 12 > len(data):
+                break
+            tag, typ, cnt = struct.unpack(e + "HHI", data[ent:ent + 8])
+            if typ in (3,) and cnt == 1:
+                val = struct.unpack(e + "H", data[ent + 8:ent + 10])[0]
+            elif typ in (4, 13) and cnt == 1:
+                val = struct.unpack(e + "I", data[ent + 8:ent + 12])[0]
+            elif typ in (4, 13) and tag == 0x14A:   # SubIFDs : liste de pointeurs
+                ptr = struct.unpack(e + "I", data[ent + 8:ent + 12])[0]
+                val = list(struct.unpack(e + "I" * cnt, data[ptr:ptr + 4 * cnt])) if ptr + 4 * cnt <= len(data) else []
+            else:
+                continue
+            tags[tag] = val
+        for start, length in ((0x111, 0x117), (0x201, 0x202)):
+            o, l = tags.get(start), tags.get(length)
+            if isinstance(o, int) and isinstance(l, int) and l > 1000 and data[o:o + 2] == b"\xff\xd8":
+                found.append((o, l))
+        sub = tags.get(0x14A)
+        if isinstance(sub, int):
+            todo.append(sub)
+        elif isinstance(sub, list):
+            todo += sub
+        nxt = off + 2 + 12 * n
+        if nxt + 4 <= len(data):
+            todo.append(struct.unpack(e + "I", data[nxt:nxt + 4])[0])
+    return found
+
+
+def _scan_jpegs(data: bytes, limit=40):
+    """Dernier recours (CR3, RAF…) : JPEG intégrés repérés par leurs marqueurs."""
+    out, pos = [], 0
+    while len(out) < limit:
+        start = data.find(b"\xff\xd8\xff", pos)
+        if start < 0:
+            break
+        end = data.find(b"\xff\xd9", start + 4)
+        while end > 0:
+            try:
+                with Image.open(io.BytesIO(data[start:end + 2])) as t:
+                    w, h = t.size
+                out.append((start, end + 2 - start, w * h))
+                break
+            except Exception:
+                end = data.find(b"\xff\xd9", end + 2)
+                if end - start > 60_000_000:
+                    end = -1
+        pos = start + 3
+    return out
+
+
+def raw_preview(data: bytes):
+    """Plus grand aperçu JPEG intégré à un fichier RAW, et les EXIF du RAW lui-même."""
+    exif = None
+    if data[:4] in (b"II*\0", b"MM\0*"):
+        try:
+            exif = Image.Exif()
+            exif.load(data)
+        except Exception:
+            exif = None
+    best = None
+    for o, l in _tiff_jpegs(data):
+        if best is None or l > best[1]:
+            best = (o, l)
+    if best is None or best[1] < 200_000:  # rien d'utilisable dans la structure : on cherche partout
+        scanned = sorted(_scan_jpegs(data), key=lambda t: -t[2])
+        if scanned and (best is None or scanned[0][1] > best[1]):
+            best = scanned[0][:2]
+    if best is None:
+        raise ValueError("aucun aperçu JPEG dans ce fichier RAW")
+    return data[best[0]:best[0] + best[1]], exif
+
+
+def read_metadata(im: Image.Image, name: str, mtime: float, exif=None):
     """Date de prise de vue, appareil, GPS et taille orientée."""
     meta = {"make": None, "model": None, "lat": None, "lon": None}
     taken = None
     orientation = 1
-    try:
-        exif = im.getexif()
-    except Exception:
-        exif = None
+    if exif is None:
+        try:
+            exif = im.getexif()
+        except Exception:
+            exif = None
     if exif:
         orientation = exif.get(0x0112, 1) or 1
         meta["make"] = (str(exif.get(0x010F) or "").strip("\x00 ") or None)
@@ -119,8 +227,25 @@ def open_reduced(src, target: int, name: str = None, mtime: float = None):
     (côté long), orientée, en RGB."""
     if isinstance(src, Path):
         name, mtime = src.name, src.stat().st_mtime
-    im = Image.open(src)
-    meta = read_metadata(im, name or "", mtime or 0)
+    raw_orient = 1
+    if is_raw(name):  # RAW : on lit l'aperçu JPEG intégré (rapide, sans décoder le RAW)
+        data = src.read_bytes() if isinstance(src, Path) else (src.getvalue() if hasattr(src, "getvalue") else src.read())
+        jpeg, cexif = raw_preview(data)
+        im = Image.open(io.BytesIO(jpeg))
+        meta = read_metadata(im, name or "", mtime or 0, exif=cexif if cexif else None)
+        raw_orient = meta.get("orientation", 1)
+        try:
+            if im.getexif().get(0x0112, 1) not in (None, 1):
+                raw_orient = 1   # l'aperçu porte déjà sa propre orientation
+        except Exception:
+            pass
+        if raw_orient in (5, 6, 7, 8):  # dimensions d'après l'aperçu, une fois tourné
+            meta["width"], meta["height"] = im.size[1], im.size[0]
+        else:
+            meta["width"], meta["height"] = im.size
+    else:
+        im = Image.open(src)
+        meta = read_metadata(im, name or "", mtime or 0)
     if getattr(im, "is_animated", False):
         im.seek(0)
     try:
@@ -128,6 +253,8 @@ def open_reduced(src, target: int, name: str = None, mtime: float = None):
     except Exception:
         pass
     im = ImageOps.exif_transpose(im)
+    if raw_orient in _TRANSPOSE:
+        im = im.transpose(_TRANSPOSE[raw_orient])
     if im.mode not in ("RGB",):
         if im.mode in ("RGBA", "LA", "P"):
             im = im.convert("RGBA")
