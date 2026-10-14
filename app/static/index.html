@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Photothèque</title>
+<meta name="theme-color" content="#E8EBE9">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='26' height='20' rx='3' fill='%2325201C'/%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%23E9A23B' stroke-width='2.5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,650&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/photos">Photothèque</a>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#/photos" data-tab="photos">Photos</a>
+    <a href="#/people" data-tab="people">Personnes</a>
+    <a href="#/folders" data-tab="folders">Dossiers</a>
+  </nav>
+  <form class="search" role="search" id="searchForm">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg>
+    <input id="searchInput" type="search" placeholder="Nom de fichier ou dossier" aria-label="Rechercher">
+  </form>
+  <button class="btn ghost" id="filterBtn" aria-expanded="false" aria-controls="filterPanel">Filtres<span class="badge" id="filterCount" hidden></span></button>
+  <button class="status" id="statusBtn" title="Lancer une nouvelle analyse"><span id="statusText">…</span></button>
+  <div class="progress" id="progress" hidden><i></i></div>
+</header>
+
+<section class="filters" id="filterPanel" hidden aria-label="Filtres">
+  <div class="fgroup">
+    <h3>Personnes</h3>
+    <input type="search" id="personFilterSearch" placeholder="Chercher un nom">
+    <div class="person-picks" id="personPicks"></div>
+  </div>
+  <div class="fgroup">
+    <h3>Période</h3>
+    <div class="daterow">
+      <label>Du <input type="date" id="fFrom"></label>
+      <label>au <input type="date" id="fTo"></label>
+    </div>
+    <div class="years" id="yearPicks"></div>
+  </div>
+  <div class="fgroup">
+    <h3>Dossier</h3>
+    <input type="search" id="folderSearch" placeholder="Chercher un dossier" list="folderList">
+    <datalist id="folderList"></datalist>
+    <h3>Appareil</h3>
+    <select id="cameraSelect"><option value="">Tous les appareils</option></select>
+    <button class="btn" id="clearFilters" type="button">Effacer les filtres</button>
+  </div>
+</section>
+
+<div class="chips" id="chips"></div>
+
+<main id="view"></main>
+
+<nav class="film" id="film" aria-label="Années"></nav>
+
+<div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Photo">
+  <div class="lb-bar">
+    <button class="lb-btn" data-act="close" title="Fermer (Échap)">
+      <svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+    <div class="lb-title"><strong id="lbDate"></strong><span id="lbPlace"></span></div>
+    <button class="lb-btn" data-act="faces" title="Afficher les visages (V)">
+      <svg viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2"/><circle cx="10" cy="9" r="2.6"/><path d="M5.8 15.5c.9-2 2.4-3 4.2-3s3.3 1 4.2 3"/></svg></button>
+    <button class="lb-btn" data-act="info" title="Informations (I)">
+      <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.1"/></svg></button>
+    <a class="lb-btn" id="lbDownload" title="Télécharger l'original" download>
+      <svg viewBox="0 0 20 20"><path d="M10 3v10M5.5 8.5L10 13l4.5-4.5M4 16.5h12"/></svg></a>
+  </div>
+  <div class="lb-stage" id="lbStage">
+    <img id="lbImg" alt="">
+    <div class="lb-faces" id="lbFaces"></div>
+    <button class="lb-nav prev" data-act="prev" title="Précédente (←)"><svg viewBox="0 0 20 20"><path d="M12.5 4L6.5 10l6 6"/></svg></button>
+    <button class="lb-nav next" data-act="next" title="Suivante (→)"><svg viewBox="0 0 20 20"><path d="M7.5 4l6 6-6 6"/></svg></button>
+  </div>
+  <aside class="lb-info" id="lbInfo" hidden></aside>
+</div>
+
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

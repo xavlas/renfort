@@ -1,0 +1,43 @@
+services:
+  phototheque:
+    build: .
+    image: phototheque:latest
+    container_name: phototheque
+    restart: unless-stopped
+    ports:
+      - "2342:2342"
+    volumes:
+      # Dossier de photos principal, en lecture seule : l'application ne modifie jamais vos fichiers.
+      - "/mnt/photos:/photos:ro"
+      # Base de données, miniatures et visages.
+      - ./data:/data
+      # Disques du Pi, en lecture seule, pour pouvoir ajouter d'autres dossiers depuis la page « Dossiers ».
+      # rslave : un disque branché après le démarrage apparaît aussi.
+      - type: bind
+        source: /mnt
+        target: /host/mnt
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: true
+      - type: bind
+        source: /media
+        target: /host/media
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: true
+    environment:
+      - TZ=Europe/Paris
+      # Chemin réel du dossier principal sur le Pi (pour l'affichage).
+      - PHOTOS_HOST_PATH=/mnt/photos
+      # Mot de passe d'accès (dans le fichier .env ; vide = pas de mot de passe).
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      # Nombre de photos analysées en parallèle (2 sur un Pi 4, 3 sur un Pi 5).
+      - WORKERS=2
+      # Nouvelle analyse automatique toutes les N heures (0 = seulement au démarrage et via le bouton).
+      - SCAN_INTERVAL_HOURS=6
+      # Reconnaissance des visages : 1 = activée, 0 = désactivée.
+      - ENABLE_FACES=1
+      # Exigence pour regrouper deux visages (0.35 = plus de regroupements, 0.45 = plus strict).
+      - FACE_MATCH_THRESHOLD=0.40

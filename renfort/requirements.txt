@@ -1,0 +1,4 @@
+pillow>=10.1
+pillow-heif>=0.13
+opencv-python-headless>=4.8
+numpy>=1.24
